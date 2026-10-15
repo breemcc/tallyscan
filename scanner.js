@@ -4,7 +4,7 @@ const FORMATS = ["qr_code", "ean_13", "ean_8", "upc_a", "upc_e", "code_128", "co
   "itf", "codabar", "data_matrix", "pdf417", "aztec"];
 const ZXING_URL = "https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js";
 
-function loadZxing() {
+export function loadZxing() {
   if (window.ZXing) return Promise.resolve(window.ZXing);
   return new Promise((resolve, reject) => {
     const s = document.createElement("script");
@@ -15,9 +15,30 @@ function loadZxing() {
   });
 }
 
+// Decodes one canvas frame with ZXing; returns the text or null when no code is found.
+export function makeZxingDecoder(ZXing) {
+  const { DecodeHintType, BarcodeFormat } = ZXing;
+  const hints = new Map([
+    [DecodeHintType.TRY_HARDER, true],
+    [DecodeHintType.POSSIBLE_FORMATS, [
+      BarcodeFormat.QR_CODE, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A,
+      BarcodeFormat.UPC_E, BarcodeFormat.CODE_128, BarcodeFormat.CODE_39, BarcodeFormat.CODE_93,
+      BarcodeFormat.ITF, BarcodeFormat.CODABAR, BarcodeFormat.DATA_MATRIX, BarcodeFormat.PDF_417,
+      BarcodeFormat.AZTEC,
+    ]],
+  ]);
+  const reader = new ZXing.MultiFormatReader();
+  reader.setHints(hints);
+  return (canvas) => {
+    const bitmap = new ZXing.BinaryBitmap(
+      new ZXing.HybridBinarizer(new ZXing.HTMLCanvasElementLuminanceSource(canvas)));
+    try { return reader.decode(bitmap).getText(); } catch { return null; }
+  };
+}
+
 export async function startScanner(video, onResult) {
   const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: { ideal: "environment" } },
+    video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
     audio: false,
   });
   video.srcObject = stream;
@@ -48,13 +69,20 @@ export async function startScanner(video, onResult) {
     tick();
   } else {
     const ZXing = await loadZxing();
-    const reader = new ZXing.BrowserMultiFormatReader();
-    const tick = async () => {
+    const decode = makeZxingDecoder(ZXing);
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const tick = () => {
       if (stopped) return;
-      try {
-        const result = await reader.decodeFromVideoElement(video);
-        return found(result.getText());
-      } catch { setTimeout(tick, 150); }
+      if (video.videoWidth) {
+        const scale = Math.min(1, 960 / video.videoWidth);
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const text = decode(canvas);
+        if (text) return found(text);
+      }
+      setTimeout(tick, 100);
     };
     tick();
   }

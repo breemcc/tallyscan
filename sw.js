@@ -1,5 +1,5 @@
 // Cache-first app shell so the app opens and works offline; the ZXing fallback is cached on first use.
-const CACHE = "tallyscan-v1";
+const CACHE = "tallyscan-v2";
 const SHELL = ["./", "index.html", "style.css", "app.js", "db.js", "csv.js", "scanner.js", "manifest.webmanifest", "icon.svg"];
 
 self.addEventListener("install", (e) => {
